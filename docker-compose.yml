@@ -10,3 +10,23 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  postgres:
+    image: postgres:16
+    container_name: robotics_postgres
+    environment:
+      POSTGRES_USER: robotics
+      POSTGRES_PASSWORD: robotics_password
+      POSTGRES_DB: robotics_lab
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U robotics -d robotics_lab"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
