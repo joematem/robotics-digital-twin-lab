@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+
+# Conda
+.conda/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs and experiment outputs
+runs/
+logs/
+outputs/
+wandb/
+
+# Data
+data/
+datasets/
+*.csv
+*.parquet
+*.sqlite
+*.db
+
+# OS/editor
+.DS_Store
+.vscode/
+
