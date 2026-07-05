@@ -1,12 +1,18 @@
+import os
+from datetime import datetime, timezone
+
+import psycopg2
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-import psycopg2
 
 
 class RobotStatusDbLogger(Node):
     def __init__(self):
         super().__init__("robot_status_db_logger")
+
+        self.run_id = os.getenv("RUN_ID", datetime.now(timezone.utc).strftime("run_%Y%m%d_%H%M%S"))
+        self.scenario_name = os.getenv("SCENARIO_NAME", "baseline")
 
         self.conn = psycopg2.connect(
             host="localhost",
@@ -17,6 +23,8 @@ class RobotStatusDbLogger(Node):
         )
         self.conn.autocommit = True
 
+        self.ensure_run_exists()
+
         self.subscription = self.create_subscription(
             String,
             "/warehouse/robot_status",
@@ -24,7 +32,24 @@ class RobotStatusDbLogger(Node):
             10,
         )
 
-        self.get_logger().info("Robot status database logger started")
+        self.get_logger().info(
+            f"Database logger started for run_id={self.run_id}, scenario={self.scenario_name}"
+        )
+
+    def ensure_run_exists(self):
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO simulation_runs (run_id, scenario_name, description)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (run_id) DO NOTHING
+                """,
+                (
+                    self.run_id,
+                    self.scenario_name,
+                    "ROS 2 warehouse robot telemetry experiment",
+                ),
+            )
 
     def parse_message(self, raw_message):
         data = {}
@@ -50,13 +75,13 @@ class RobotStatusDbLogger(Node):
             cur.execute(
                 """
                 INSERT INTO ros_robot_telemetry
-                (robot_id, zone, task, battery, status, raw_message)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                (run_id, robot_id, zone, task, battery, status, raw_message)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (robot_id, zone, task, battery, status, raw_message),
+                (self.run_id, robot_id, zone, task, battery, status, raw_message),
             )
 
-        self.get_logger().info(f"Logged telemetry to PostgreSQL: {raw_message}")
+        self.get_logger().info(f"Logged telemetry: {robot_id} | {status} | {battery}%")
 
 
 def main(args=None):
