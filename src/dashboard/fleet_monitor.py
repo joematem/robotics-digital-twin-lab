@@ -155,3 +155,147 @@ st.subheader("Recent Telemetry")
 st.dataframe(filtered_df, use_container_width=True)
 
 st.caption("Dashboard refreshes cached database queries every 3 seconds.")
+st.divider()
+st.header("Scenario Comparison")
+
+@st.cache_data(ttl=5)
+def load_scenario_runs():
+    query = """
+        SELECT run_id, scenario_name, started_at
+        FROM simulation_runs
+        ORDER BY started_at DESC;
+    """
+    return pd.read_sql(query, engine)
+
+
+@st.cache_data(ttl=5)
+def load_scenario_records(run_ids):
+    if not run_ids:
+        return pd.DataFrame()
+
+    query = text("""
+        SELECT
+            r.scenario_name,
+            t.run_id,
+            t.robot_id,
+            t.zone,
+            t.task,
+            t.battery,
+            t.status,
+            t.created_at
+        FROM ros_robot_telemetry t
+        JOIN simulation_runs r ON t.run_id = r.run_id
+        WHERE t.run_id = ANY(:run_ids)
+        ORDER BY t.created_at DESC;
+    """)
+    return pd.read_sql(query, engine, params={"run_ids": run_ids})
+
+
+runs_df = load_scenario_runs()
+
+if runs_df.empty:
+    st.info("No named simulation runs found yet.")
+else:
+    run_labels = {
+        f"{row.scenario_name} | {row.run_id}": row.run_id
+        for row in runs_df.itertuples()
+    }
+
+    selected_labels = st.multiselect(
+        "Select runs to compare",
+        options=list(run_labels.keys()),
+        default=list(run_labels.keys())[:2],
+    )
+
+    selected_run_ids = [run_labels[label] for label in selected_labels]
+    scenario_df = load_scenario_records(selected_run_ids)
+
+    if scenario_df.empty:
+        st.warning("No telemetry found for selected runs.")
+    else:
+        kpi_df = (
+            scenario_df.groupby("scenario_name")
+            .agg(
+                total_records=("robot_id", "count"),
+                delayed_records=("status", lambda x: int((x == "delayed").sum())),
+                charging_need_records=("status", lambda x: int((x == "needs_charging").sum())),
+                avg_battery=("battery", "mean"),
+            )
+            .reset_index()
+        )
+
+        kpi_df["avg_battery"] = kpi_df["avg_battery"].round(2)
+
+        st.subheader("Scenario KPI Summary")
+        st.dataframe(kpi_df, use_container_width=True)
+
+        left3, right3 = st.columns(2)
+
+        with left3:
+            st.subheader("Status Comparison")
+            status_compare = (
+                scenario_df.groupby(["scenario_name", "status"])
+                .size()
+                .reset_index(name="records")
+            )
+            status_fig = px.bar(
+                status_compare,
+                x="status",
+                y="records",
+                color="scenario_name",
+                barmode="group",
+                title="Status Counts by Scenario",
+            )
+            st.plotly_chart(status_fig, use_container_width=True)
+
+        with right3:
+            st.subheader("Task Comparison")
+            task_compare = (
+                scenario_df.groupby(["scenario_name", "task"])
+                .size()
+                .reset_index(name="records")
+            )
+            task_fig = px.bar(
+                task_compare,
+                x="task",
+                y="records",
+                color="scenario_name",
+                barmode="group",
+                title="Task Counts by Scenario",
+            )
+            st.plotly_chart(task_fig, use_container_width=True)
+
+        st.subheader("Zone Comparison")
+        zone_compare = (
+            scenario_df.groupby(["scenario_name", "zone"])
+            .size()
+            .reset_index(name="records")
+        )
+        zone_fig = px.bar(
+            zone_compare,
+            x="zone",
+            y="records",
+            color="scenario_name",
+            barmode="group",
+            title="Zone Activity by Scenario",
+        )
+        st.plotly_chart(zone_fig, use_container_width=True)
+
+        st.subheader("Robot Battery Comparison")
+        battery_compare = (
+            scenario_df.groupby(["scenario_name", "robot_id"])
+            .agg(avg_battery=("battery", "mean"))
+            .reset_index()
+        )
+        battery_compare["avg_battery"] = battery_compare["avg_battery"].round(2)
+
+        battery_compare_fig = px.bar(
+            battery_compare,
+            x="robot_id",
+            y="avg_battery",
+            color="scenario_name",
+            barmode="group",
+            range_y=[0, 100],
+            title="Average Battery by Robot and Scenario",
+        )
+        st.plotly_chart(battery_compare_fig, use_container_width=True)
