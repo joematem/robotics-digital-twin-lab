@@ -1,3 +1,5 @@
+import random
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -11,33 +13,52 @@ class MultiRobotStatusPublisher(Node):
         self.counter = 0
 
         self.robots = [
-            {"robot_id": "AMR_001", "battery": 100, "task": "inventory_scan"},
-            {"robot_id": "AMR_002", "battery": 85, "task": "pallet_transfer"},
-            {"robot_id": "AMR_003", "battery": 70, "task": "replenishment"},
+            {"robot_id": "AMR_001", "battery": 100, "task": "inventory_scan", "status": "active"},
+            {"robot_id": "AMR_002", "battery": 85, "task": "pallet_transfer", "status": "active"},
+            {"robot_id": "AMR_003", "battery": 70, "task": "replenishment", "status": "active"},
         ]
+
+        self.tasks = ["inventory_scan", "pallet_transfer", "replenishment", "idle"]
+
+    def update_robot(self, robot, index):
+        if robot["status"] == "charging":
+            robot["battery"] = min(100, robot["battery"] + 8)
+            robot["task"] = "charging"
+
+            if robot["battery"] >= 80:
+                robot["status"] = "active"
+                robot["task"] = random.choice(self.tasks[:-1])
+
+        elif robot["battery"] <= 15:
+            robot["status"] = "needs_charging"
+            robot["task"] = "return_to_charger"
+            robot["battery"] = max(0, robot["battery"] - 1)
+
+            if robot["battery"] <= 5:
+                robot["status"] = "charging"
+                robot["task"] = "charging"
+
+        else:
+            robot["status"] = "active"
+            robot["battery"] = max(0, robot["battery"] - (index + 1))
+
+            if self.counter % 8 == 0:
+                robot["task"] = random.choice(self.tasks)
 
     def publish_status(self):
         self.counter += 1
 
         for index, robot in enumerate(self.robots):
-            robot["battery"] = max(0, robot["battery"] - (index + 1))
-
-            if robot["battery"] <= 15:
-                status = "needs_charging"
-                task = "return_to_charger"
-            else:
-                status = "active"
-                task = robot["task"]
-
+            self.update_robot(robot, index)
             zone = f"A{(self.counter + index) % 5}"
 
             msg = String()
             msg.data = (
                 f"robot_id={robot['robot_id']}; "
                 f"zone={zone}; "
-                f"task={task}; "
+                f"task={robot['task']}; "
                 f"battery={robot['battery']}; "
-                f"status={status}"
+                f"status={robot['status']}"
             )
 
             self.publisher.publish(msg)
