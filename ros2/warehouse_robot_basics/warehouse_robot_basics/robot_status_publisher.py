@@ -1,3 +1,5 @@
+
+import os
 import random
 
 import rclpy
@@ -12,6 +14,9 @@ class MultiRobotStatusPublisher(Node):
         self.timer = self.create_timer(1.0, self.publish_status)
         self.counter = 0
 
+        self.scenario_name = os.getenv("SCENARIO_NAME", "baseline")
+        self.blocked_zone = os.getenv("BLOCKED_ZONE", "A3")
+
         self.robots = [
             {"robot_id": "AMR_001", "battery": 100, "task": "inventory_scan", "status": "active"},
             {"robot_id": "AMR_002", "battery": 85, "task": "pallet_transfer", "status": "active"},
@@ -19,6 +24,10 @@ class MultiRobotStatusPublisher(Node):
         ]
 
         self.tasks = ["inventory_scan", "pallet_transfer", "replenishment", "idle"]
+
+        self.get_logger().info(
+            f"Publisher started with scenario={self.scenario_name}, blocked_zone={self.blocked_zone}"
+        )
 
     def update_robot(self, robot, index):
         if robot["status"] == "charging":
@@ -45,20 +54,28 @@ class MultiRobotStatusPublisher(Node):
             if self.counter % 8 == 0:
                 robot["task"] = random.choice(self.tasks)
 
+    def apply_scenario(self, robot, zone):
+        if self.scenario_name == "blocked_zone_A3" and zone == self.blocked_zone:
+            return "A4", "reroute_from_blocked_zone", "delayed"
+
+        return zone, robot["task"], robot["status"]
+
     def publish_status(self):
         self.counter += 1
 
         for index, robot in enumerate(self.robots):
             self.update_robot(robot, index)
-            zone = f"A{(self.counter + index) % 5}"
+
+            planned_zone = f"A{(self.counter + index) % 5}"
+            zone, task, status = self.apply_scenario(robot, planned_zone)
 
             msg = String()
             msg.data = (
                 f"robot_id={robot['robot_id']}; "
                 f"zone={zone}; "
-                f"task={robot['task']}; "
+                f"task={task}; "
                 f"battery={robot['battery']}; "
-                f"status={robot['status']}"
+                f"status={status}"
             )
 
             self.publisher.publish(msg)
