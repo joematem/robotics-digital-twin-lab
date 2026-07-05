@@ -219,13 +219,24 @@ else:
                 total_records=("robot_id", "count"),
                 delayed_records=("status", lambda x: int((x == "delayed").sum())),
                 charging_need_records=("status", lambda x: int((x == "needs_charging").sum())),
+                waiting_for_charger_records=(
+                    "status",
+                    lambda x: int((x == "waiting_for_charger").sum()),
+                ),
+                stalled_records=("status", lambda x: int((x == "stalled").sum())),
                 avg_battery=("battery", "mean"),
+                min_battery=("battery", "min"),
             )
             .reset_index()
         )
 
         kpi_df["avg_battery"] = kpi_df["avg_battery"].round(2)
-
+        kpi_df["operational_stress_score"] = (
+            kpi_df["delayed_records"]
+            + kpi_df["charging_need_records"]
+            + kpi_df["waiting_for_charger_records"]
+            + (2 * kpi_df["stalled_records"])
+        )
         st.subheader("Scenario KPI Summary")
         st.dataframe(kpi_df, use_container_width=True)
 
