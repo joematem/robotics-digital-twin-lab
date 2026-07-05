@@ -1,4 +1,3 @@
-
 import os
 import random
 
@@ -30,6 +29,20 @@ class MultiRobotStatusPublisher(Node):
         )
 
     def update_robot(self, robot, index):
+        if robot["status"] == "waiting_for_charger":
+            robot["battery"] = max(0, robot["battery"] - 1)
+            robot["task"] = "charger_unavailable"
+
+            if robot["battery"] == 0:
+                robot["status"] = "stalled"
+
+            return
+
+        if robot["status"] == "stalled":
+            robot["battery"] = 0
+            robot["task"] = "stalled_no_battery"
+            return
+
         if robot["status"] == "charging":
             robot["battery"] = min(100, robot["battery"] + 8)
             robot["task"] = "charging"
@@ -39,13 +52,18 @@ class MultiRobotStatusPublisher(Node):
                 robot["task"] = random.choice(self.tasks[:-1])
 
         elif robot["battery"] <= 15:
-            robot["status"] = "needs_charging"
-            robot["task"] = "return_to_charger"
-            robot["battery"] = max(0, robot["battery"] - 1)
+            if self.scenario_name == "charging_station_failure":
+                robot["status"] = "waiting_for_charger"
+                robot["task"] = "charger_unavailable"
+                robot["battery"] = max(0, robot["battery"] - 1)
+            else:
+                robot["status"] = "needs_charging"
+                robot["task"] = "return_to_charger"
+                robot["battery"] = max(0, robot["battery"] - 1)
 
-            if robot["battery"] <= 5:
-                robot["status"] = "charging"
-                robot["task"] = "charging"
+                if robot["battery"] <= 5:
+                    robot["status"] = "charging"
+                    robot["task"] = "charging"
 
         else:
             robot["status"] = "active"
